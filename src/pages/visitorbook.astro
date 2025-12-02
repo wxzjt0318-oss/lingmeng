@@ -9,7 +9,7 @@ const pageSubtitle = i18n(I18nKey.guestbookSubtitle) || "留下你的足迹，�
 ---
 
 <MainGridLayout title={pageTitle} description={pageSubtitle}>
-  <!-- Hero 区（昼夜自适应 + 文字清晰） -->
+  <!-- Hero -->
   <div class="w-full bg-gradient-to-r from-[var(--primary)] to-[var(--primary-dark)] text-gray-900 dark:text-white py-6 mb-6 rounded-t-[var(--radius-large)]">
     <div class="max-w-4xl mx-auto px-4 text-center">
       <h1 class="text-3xl md:text-4xl font-bold leading-tight drop-shadow-sm dark:drop-shadow-md">{pageTitle}</h1>
@@ -55,81 +55,85 @@ const pageSubtitle = i18n(I18nKey.guestbookSubtitle) || "留下你的足迹，�
   </div>
 </MainGridLayout>
 
-<!-- ✅ 保留 defer 脚本（按你要求，不影响 SEO 或首次加载） -->
-<script src="https://cdn.jsdelivr.net/npm/twikoo@latest/dist/twikoo.all.min.js" defer></script>
+<!-- 只保留一次 SDK 引入，固定版本，避免 latest 带来的不确定性 -->
+<script src="https://cdn.jsdelivr.net/npm/twikoo@1.6.39/dist/twikoo.all.min.js" defer crossorigin="anonymous"></script>
 
-<!-- ✅ 动态加载 + 初始化 Twikoo（绕过全局脚本报错） -->
+<!-- 初始化（兼容 Astro 客户端导航） -->
 <script>
-  function loadAndInitTwikoo() {
-    const container = document.getElementById('twikoo');
-    if (!container) return;
+  (function () {
+    // 注意：去掉末尾斜杠，避免请求路径出错
+    var ENV_ID = "https://twikoo-api-gmgc.vercel.app";
 
-    // 防止重复初始化
-    if (container.dataset.twikooLoaded === 'true') return;
-    container.dataset.twikooLoaded = 'true';
+    function initTwikoo() {
+      var container = document.getElementById("twikoo");
+      if (!container) return;
 
-    // 清空容器（确保干净）
-    container.innerHTML = '';
+      // 清空容器，避免客户端路由导致的重复挂载
+      container.innerHTML = "";
 
-    // 动态创建 script 标签加载 Twikoo SDK
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/twikoo@latest/dist/twikoo.all.min.js';
-    script.onload = () => {
       try {
         window.twikoo.init({
-          envId: "https://twikoo-api-gmgc.vercel.app/",
-          el: '#twikoo',
-          path: '/guestbook',
-          lang: 'zh-CN'
+          envId: ENV_ID,
+          el: "#twikoo",
+          path: window.location.pathname,
+          lang: "zh-CN"
         });
       } catch (err) {
-        console.error('[Twikoo] Init failed after dynamic load:', err);
-        container.dataset.twikooLoaded = 'false'; // 允许重试
+        console.error("[Twikoo] init error:", err);
       }
-    };
-    script.onerror = () => {
-      console.error('[Twikoo] Failed to load SDK dynamically');
-      container.dataset.twikooLoaded = 'false';
-    };
-    document.head.appendChild(script);
-  }
+    }
 
-  // 初始加载
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadAndInitTwikoo);
-  } else {
-    loadAndInitTwikoo();
-  }
+    // 等待 DOM 与 SDK 就绪
+    function ready(fn) {
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", fn, { once: true });
+      } else {
+        fn();
+      }
+    }
 
-  // Astro 客户端导航支持：每次进入页面都尝试加载
-  if (typeof window !== 'undefined') {
-    window.addEventListener('astro:page-load', () => {
-      requestAnimationFrame(() => {
-        setTimeout(loadAndInitTwikoo, 100);
-      });
+    ready(function () {
+      if (window.twikoo) {
+        initTwikoo();
+      } else {
+        // 兜底：极端情况下 defer 执行顺序与网络时序导致 twikoo 尚未可用
+        var tries = 0;
+        var t = setInterval(function () {
+          if (window.twikoo) {
+            clearInterval(t);
+            initTwikoo();
+          } else if (++tries > 100) {
+            clearInterval(t);
+            console.error("[Twikoo] SDK failed to load");
+          }
+        }, 50);
+      }
     });
-  }
+
+    // Astro 客户端导航：每次进入页面重新挂载
+    if (typeof window !== "undefined") {
+      window.addEventListener("astro:page-load", function () {
+        initTwikoo();
+      });
+    }
+  })();
 </script>
 
 <style>
   .visitorbook-header h2 {
     text-align: left;
   }
-
   .features-list,
   .notice-list {
     list-style: none;
     padding-left: 0;
   }
-
   .emoji {
     font-size: 1rem;
   }
-
   #twikoo {
     min-height: 300px;
   }
-
   @media (max-width: 640px) {
     .card-base {
       margin: 0 -0.5rem;
