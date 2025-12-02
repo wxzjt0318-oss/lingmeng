@@ -1,4 +1,4 @@
-、---
+---
 import ImageWrapper from "../components/misc/ImageWrapper.astro";
 import { sidebarLayoutConfig, siteConfig } from "../config";
 import localAnimeList from "../data/anime";
@@ -455,7 +455,7 @@ void isBothSidebarMode;
             </button>
             <button class="filter-tag" data-status="planned">
               {i18n(I18nKey.animeStatusPlanned)} 
-              <span class="ml-1 bg-amber-500 text-white text-xs rounded-full px-2 py-0.5">({animeList.filter(a => a.status === 'planned').length})</span>
+              <span class="ml-1 bg-amber-500 text白 text-xs rounded-full px-2 py-0.5">({animeList.filter(a => a.status === 'planned').length})</span>
             </button>
             <button class="filter-tag" data-status="completed">
               {i18n(I18nKey.animeStatusCompleted)} 
@@ -695,7 +695,6 @@ void isBothSidebarMode;
         animeItems.forEach(item => {
           const first = firstPositions.get(item);
           const last = lastPositions.get(item);
-          
           if (first && last) {
             const deltaX = first.left - last.left;
             const deltaY = first.top - last.top;
@@ -738,8 +737,8 @@ void isBothSidebarMode;
     .card-base { container-type: inline-size; }
     
     /* 布局固定列数
-       - grid-mode：每行5列（结合分页每页10个）
-       - list-mode：每行4列（结合分页每页8个） */
+       - grid-mode：每行5列（每页固定10个）
+       - list-mode：每行4列（分页仍固定每页10个） */
     .anime-grid-container { transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
     .anime-grid-container.grid-mode { display: grid; grid-template-columns: repeat(5, 1fr); }
     .anime-grid-container.list-mode { display: grid; grid-template-columns: repeat(4, 1fr); }
@@ -798,9 +797,28 @@ void isBothSidebarMode;
     #search-input { padding-left: 2.5rem; transition: all 0.3s ease; }
     #search-input:focus { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
     .search-highlight { background-color: #fef3c7; padding: 0.125rem 0.25rem; border-radius: 0.25rem; font-weight: 600; }
+
+    /* 移动端（Android/小屏）视觉优化：更大封面、更大字号/行高、更大触控目标 */
+    @media (max-width: 640px) {
+      /* 两列：封面更大 */
+      .anime-grid-container.grid-mode { grid-template-columns: repeat(2, 1fr); }
+      .anime-grid-container.list-mode { grid-template-columns: repeat(2, 1fr); }
+
+      /* 卡片内边距、标题与正文字号与行高增大 */
+      .group .p-3 { padding: 0.875rem; }
+      .group h3 { font-size: 1rem; line-height: 1.5; }    /* 原 text-sm -> 1rem */
+      .group p { font-size: 0.9375rem; line-height: 1.6; }
+
+      /* 过滤与分页按钮触控更大 */
+      .filter-tag { padding: 0.625rem 1rem; font-size: 1rem; }
+      .pagination-btn, .page-number { padding: 0.625rem 0.875rem; font-size: 1rem; }
+
+      /* 搜索输入框更易点按 */
+      #search-input { padding: 0.875rem 1rem 0.875rem 2.75rem; font-size: 1rem; }
+    }
   </style>
 
-  <!-- 过滤功能脚本（保留原联动与去重监听；仅按布局切换每页条数：grid=10，list=8） -->
+  <!-- 过滤功能脚本（保持原联动与去重监听；分页每页固定10个） -->
   <script is:inline>
     // 事件监听器存储，用于防止重复绑定
     if (typeof window.animeFilterEventListeners === 'undefined') {
@@ -931,21 +949,19 @@ void isBothSidebarMode;
       console.log('Filter buttons initialized with', filterTags.length, 'buttons');
     }
     
-    // 分页（每页数量根据布局确定：grid=10，list=8）
+    // 分页（每页固定 10 个）
     let currentPage = 1;
-    let itemsPerPage = 8; // 初始按 list-mode 预估，首次分页时会根据容器类修正
+    let itemsPerPage = 10; // 固定 10
     let filteredItems = Array.from(document.querySelectorAll('[data-anime-status]'));
     let pageWindowStart = 1;
     const windowSize = 5;
 
     function getItemsPerPageByLayout() {
-      const container = document.getElementById('anime-list-container');
-      if (container && container.classList.contains('grid-mode')) return 10;
-      return 8;
+      return 10; // 固定 10，不随布局变化
     }
     
     function updatePagination() {
-      // 动态按当前布局设置每页数量
+      // 固定每页 10 个
       itemsPerPage = getItemsPerPageByLayout();
 
       const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
@@ -989,7 +1005,7 @@ void isBothSidebarMode;
     }
     
     function showPage(page) {
-      // 动态按当前布局设置每页数量
+      // 固定每页 10 个
       itemsPerPage = getItemsPerPageByLayout();
 
       const startIndex = (page - 1) * itemsPerPage;
