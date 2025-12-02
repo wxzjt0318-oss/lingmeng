@@ -9,7 +9,13 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
 // 扩展状态类型，包含 onhold、dropped，解决 TS 比较错误
 type LocalAnimeItem = (typeof localAnimeList)[number];
 type AnimeStatus = 'watching' | 'completed' | 'planned' | 'onhold' | 'dropped';
-type AnimeItem = Omit<LocalAnimeItem, 'status'> & { status: AnimeStatus; updatedAt?: string };
+type AnimeItem = Omit<LocalAnimeItem, 'status'> & {
+  status: AnimeStatus;
+  updatedAt?: string;
+  // 新增：展示与原始日期（更稳的排序与显示）
+  startDate?: string;      // 原始放送开始时间（尽量 YYYY-MM-DD，兜底为空）
+  displayDate?: string;    // UI 展示用：YYYY 或 YYYY-MM 或 Unknown
+};
 
 // 检查番剧页面是否启用（去重）
 if (!siteConfig.featurePages.anime) {
@@ -27,6 +33,79 @@ const isValidUserId = !!BANGUMI_USER_ID && BANGUMI_USER_ID !== "your-user-id";
 // 获取番剧数据模式(不需要更改，请在主配置src/config.ts中修改)
 const ANIME_MODE = siteConfig.anime?.mode || "bangumi";
 
+// 兼容地从 infobox/多种来源提取键值
+function pickFirstUsefulValue(v: any): string | undefined {
+  if (v == null) return undefined;
+  if (typeof v === 'string') return v.trim() || undefined;
+  if (Array.isArray(v)) {
+    for (const it of v) {
+      const got = pickFirstUsefulValue(it);
+      if (got) return got;
+    }
+    return undefined;
+  }
+  if (typeof v === 'object') {
+    // 常见结构：{ v: 'xxxx' } 或 { value: 'xxxx' }
+    if (typeof v.v === 'string') return v.v.trim() || undefined;
+    if (typeof v.value === 'string') return v.value.trim() || undefined;
+  }
+  return undefined;
+}
+
+// 从 subject.infobox 提取可能的“放送开始时间”
+function getStartDateFromInfobox(subject: any): string | undefined {
+  const keys = [
+    '放送开始', '放送開始', '首播', '首映', '首播日期', '上映日期', '上映年度', '上映时间',
+    '发售日', '開始', '開始日', '开始', '開始時間', '开始时间', '开播', '首播时间'
+  ];
+  const infobox = subject?.infobox;
+  if (!Array.isArray(infobox)) return undefined;
+
+  for (const k of keys) {
+    const entry = infobox.find((x: any) => x?.key === k);
+    if (!entry) continue;
+    const v = pickFirstUsefulValue(entry?.value);
+    if (v) return v;
+  }
+  return undefined;
+}
+
+// 只用于 UI 展示：裁剪为 YYYY 或 YYYY-MM
+function toDisplayYearOrYearMonth(input?: string): string {
+  if (!input) return 'Unknown';
+  const s = input.trim();
+  // 常见格式：YYYY-MM-DD
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/;
+  const ym = /^(\d{4})-(\d{2})$/;
+  const y = /^(\d{4})$/;
+  if (ymd.test(s)) return s.slice(0, 7); // YYYY-MM
+  if (ym.test(s)) return s;              // YYYY-MM
+  if (y.test(s)) return s;               // YYYY
+  // 兜底：尝试从字符串里抓 4 位年份与可选月份
+  const m = s.match(/(\d{4})(?:[-/年](\d{1,2}))?/);
+  if (m) {
+    const year = m[1];
+    const mm = m[2];
+    if (mm) return `${year}-${String(mm).padStart(2, '0')}`;
+    return year;
+  }
+  return 'Unknown';
+}
+
+// 安全解析日期为时间戳（支持 YYYY / YYYY-MM / YYYY-MM-DD）
+function toTime(input?: string) {
+  if (!input) return 0;
+  const s = input.trim();
+  if (/^\d{4}$/.test(s)) {
+    return Date.parse(`${s}-01-01T00:00:00Z`);
+  }
+  if (/^\d{4}-\d{2}$/.test(s)) {
+    return Date.parse(`${s}-01T00:00:00Z`);
+  }
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? 0 : t;
+}
+
 // 获取单个条目相关人员信息
 async function fetchSubjectPersons(subjectId: number) {
   try {
@@ -36,6 +115,18 @@ async function fetchSubjectPersons(subjectId: number) {
   } catch (error) {
     console.error(`Error fetching subject ${subjectId} persons:`, error);
     return [];
+  }
+}
+
+// 获取单个条目详情（用于兜底拿放送开始时间/更完整信息）
+async function fetchSubjectDetail(subjectId: number) {
+  try {
+    const response = await fetch(`${BANGUMI_API_BASE}/v0/subjects/${subjectId}`);
+    if (!response.ok) throw new Error(`Bangumi subject ${subjectId} error: ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching subject ${subjectId} detail:`, error);
+    return null;
   }
 }
 
@@ -73,17 +164,34 @@ async function processBangumiData(data: any, status: AnimeStatus): Promise<Anime
 
   const detailedItems = await Promise.all(
     data.data.map(async (item: any) => {
-      // 相关人员信息（用于找制作方）
-      const subjectPersons = await fetchSubjectPersons(item.subject_id);
+      const subjectId = item.subject_id;
+      const subject = item.subject || {};
 
-      const fullDate = item.subject?.date || "";
-      // 修改：year 字段改为完整日期显示（若无则 Unknown）
-      const year = fullDate || "Unknown";
+      // 相关人员信息（用于找制作方）
+      const subjectPersons = await fetchSubjectPersons(subjectId);
+
+      // 1) 放送开始时间：优先 subject.date；为空/Unknown 时，兜底请求详情并从 date/infobox 提取
+      const rawDate = (subject?.date || '').trim();
+      const isUnknown = !rawDate || /^unknown$/i.test(rawDate) || rawDate === '0000-00-00';
+      let startDate: string | undefined = rawDate || undefined;
+
+      if (isUnknown) {
+        const detail = await fetchSubjectDetail(subjectId);
+        const detailDate = (detail?.date || '').trim();
+        const infoboxStart = getStartDateFromInfobox(detail);
+        const candidate = detailDate || infoboxStart || '';
+        startDate = candidate || undefined;
+      }
+
+      // 2) UI 展示用：只显示 年 或 年-月；无则 Unknown
+      const displayDate = toDisplayYearOrYearMonth(startDate);
+
+      // 评分/进度/总集数
       const rating = typeof item.rate === "number" ? Number(item.rate.toFixed(1)) : 0;
       const progress = item.ep_status || 0;
       const totalEpisodes =
-        typeof item.subject?.eps === "number" && item.subject?.eps > 0
-          ? item.subject.eps
+        typeof subject?.eps === "number" && subject?.eps > 0
+          ? subject.eps
           : progress;
 
       // 从相关人员中获取制作方信息
@@ -101,22 +209,23 @@ async function processBangumiData(data: any, status: AnimeStatus): Promise<Anime
 
       // 尝试使用条目更新时间；若无则退回到条目本身日期
       const updatedAt: string | undefined =
-        item.updated_at || item.comment_updated_at || item.created_at || item.subject?.date || undefined;
+        item.updated_at || item.comment_updated_at || item.created_at || subject?.date || undefined;
 
       return {
-        title: item.subject?.name_cn || item.subject?.name || "Unknown Title",
+        title: subject?.name_cn || subject?.name || "Unknown Title",
         status,
         rating,
-        cover: item.subject?.images?.medium || "/assets/anime/default.webp",
-        description: (item.subject?.short_summary || item.subject?.name_cn || "").trimStart(),
+        cover: subject?.images?.medium || "/assets/anime/default.webp",
+        description: (subject?.short_summary || subject?.name_cn || "").trimStart(),
         episodes: `${totalEpisodes} episodes`,
-        year, // 现在为完整日期（如 2024-07-05），不再仅年
-        genre: item.subject?.tags ? item.subject.tags.slice(0, 3).map((tag: any) => tag.name) : ["Unknown"],
+        // year 字段历史保留，但实际 UI 用 displayDate
+        year: displayDate,
+        displayDate,
         studio,
-        link: item.subject?.id ? `https://bgm.tv/subject/${item.subject.id}` : "#",
+        link: subject?.id ? `https://bgm.tv/subject/${subject.id}` : "#",
         progress,
         totalEpisodes,
-        startDate: item.subject?.date || "",
+        startDate: startDate || "", // 保留原始起始日期（尽量完整），用于排序
         endDate: "",
         updatedAt,
       } as AnimeItem;
@@ -128,7 +237,10 @@ async function processBangumiData(data: any, status: AnimeStatus): Promise<Anime
 // 根据模式获取番剧列表（修复：当 userId 未设置时不调用 API）
 let animeList: AnimeItem[] = [];
 if (ANIME_MODE === "local") {
-  animeList = localAnimeList as AnimeItem[];
+  animeList = (localAnimeList as AnimeItem[]).map(a => ({
+    ...a,
+    displayDate: toDisplayYearOrYearMonth(a.startDate || a.year)
+  }));
 } else if (!isValidUserId) {
   // 未设置有效 userId：不调用任何 API，留给前端提示
   animeList = [];
@@ -200,9 +312,9 @@ const stats = {
   watching: animeList.filter((anime) => anime.status === "watching").length,
   completed: animeList.filter((anime) => anime.status === "completed").length,
   avgRating: (() => {
-    const ratedAnime = animeList.filter((anime) => anime.rating > 0);
+    const ratedAnime = animeList.filter((anime) => (anime.rating || 0) > 0);
     if (ratedAnime.length === 0) return "0.0";
-    return (ratedAnime.reduce((sum, anime) => sum + anime.rating, 0) / ratedAnime.length).toFixed(1);
+    return (ratedAnime.reduce((sum, anime) => sum + (anime.rating || 0), 0) / ratedAnime.length).toFixed(1);
   })(),
 };
 
@@ -217,17 +329,10 @@ const lastUpdated = new Date().toLocaleString("zh-CN", {
   timeZone: "Asia/Shanghai",
 });
 
-// 安全解析日期为时间戳
-function toTime(input?: string) {
-  if (!input) return 0;
-  const t = Date.parse(input);
-  return Number.isNaN(t) ? 0 : t;
-}
-
 // 按更新时间/开始时间排序（修复原先依赖 endDate 的排序无效问题）
 const sortedAnimeList = [...animeList].sort((a, b) => {
-  const aTime = toTime((a as any).updatedAt) || toTime(a.endDate) || toTime(a.startDate);
-  const bTime = toTime((b as any).updatedAt) || toTime(b.endDate) || toTime(b.startDate);
+  const aTime = toTime((a as any).updatedAt) || toTime(a.startDate) || toTime(a.displayDate);
+  const bTime = toTime((b as any).updatedAt) || toTime(b.startDate) || toTime(b.displayDate);
   return bTime - aTime;
 });
 
@@ -394,7 +499,7 @@ void isBothSidebarMode;
                     )}
                   </div>
                   
-                    <!-- 内容区域 - 紧凑设计 -->
+                  <!-- 内容区域 - 紧凑设计 -->
                   <div class="p-3">
                     <h3 class="text-sm font-bold text-black/90 dark:text-white/90 mb-1 line-clamp-2 leading-tight">{anime.title}</h3>
                     <p class="text-black/60 dark:text-white/60 text-xs mb-2 line-clamp-2">{anime.description}</p>
@@ -403,7 +508,7 @@ void isBothSidebarMode;
                     <div class="space-y-1 text-xs">
                       <div class="flex justify-between">
                         <span class="text-black/50 dark:text-white/50">{i18n(I18nKey.animeYear)}</span>
-                        <span class="text-black/70 dark:text-white/70">{anime.startDate || anime.year}</span>
+                        <span class="text-black/70 dark:text-white/70">{anime.displayDate}</span>
                       </div>
                       <div class="flex justify-between">
                         <span class="text-black/50 dark:text-white/50">{i18n(I18nKey.animeStudio)}</span>
@@ -709,7 +814,7 @@ void isBothSidebarMode;
       background: var(--btn-regular-bg); color: var(--btn-content);
       font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; gap: 0.25rem;
     }
-    .pagination-btn:hover:not(:disabled) { background: var(--btn-hover-bg); border-color: var(--primary); transform: translateY(-1px); }
+    .pagination-btn:hover:not(:disabled) { background: var(--btn-hover-bg); border-color: var(--primary); }
     .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     
     .page-number {
