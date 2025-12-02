@@ -912,12 +912,22 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
     [data-anime-status].is-filtered-out,
     [data-anime-status].is-searched-out,
     [data-anime-status].is-paginated-out { display: none !important; }
+
+    /* 通用过滤/搜索 FLIP 状态 */
     [data-anime-status].anime-animating {
       transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
     [data-anime-status].anime-fade-in { opacity: 0; transform: scale(0.8); }
     [data-anime-status].anime-fade-in-active { opacity: 1; transform: scale(1); }
     [data-anime-status].anime-fade-out { opacity: 0; transform: scale(0.95); transition: opacity 0.3s ease, transform 0.3s ease; }
+
+    /* 分页专用 FLIP 状态（避免与筛选/搜索混用） */
+    [data-anime-status].anime-paginate-animating {
+      transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    [data-anime-status].anime-paginate-fade-in { opacity: 0; transform: scale(0.92); }
+    [data-anime-status].anime-paginate-fade-in-active { opacity: 1; transform: scale(1); }
+    [data-anime-status].anime-paginate-fade-out { opacity: 0; transform: scale(0.98); transition: opacity 0.28s ease, transform 0.28s ease; }
     
     .stats-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
     .stat-card { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; text-align: center; }
@@ -967,7 +977,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
     }
   </style>
 
-  <!-- 单一 init + teardown，Swup 生命周期安全重绑（保留第一版 a11y 与计数更新） -->
+  <!-- 单一 init + teardown，Swup 生命周期安全重绑；新增“仅分页”FLIP（不与筛选/搜索状态类冲突） -->
   <script is:inline>
     (function() {
       window.__animePage = window.__animePage || {};
@@ -1124,6 +1134,94 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           }, 120);
         }
 
+        // 分页专用 FLIP（仅切换 is-paginated-out，不触碰筛选/搜索类）
+        function flipAnimatePagination(keep, show, hide) {
+          if (state.reduceMotion) {
+            hide.forEach((el) => el.classList.add('is-paginated-out'));
+            show.forEach((el) => el.classList.remove('is-paginated-out'));
+            return;
+          }
+
+          const first = new Map();
+          keep.forEach((el) => {
+            const rect = el.getBoundingClientRect();
+            first.set(el, { left: rect.left, top: rect.top });
+          });
+
+          // 先给要隐藏的做淡出
+          hide.forEach((el) => el.classList.add('anime-paginate-fade-out'));
+
+          setTimeout(() => {
+            // 隐藏旧页元素
+            hide.forEach((el) => {
+              el.classList.add('is-paginated-out');
+              el.classList.remove('anime-paginate-fade-out');
+            });
+
+            // 显示新页元素（先透明缩放进入）
+            show.forEach((el) => {
+              el.classList.remove('is-paginated-out');
+              el.classList.add('anime-paginate-fade-in');
+              if (el instanceof HTMLElement) {
+                el.style.opacity = '0';
+                el.style.transform = 'scale(0.92)';
+                el.style.transition = 'none';
+              }
+            });
+
+            requestAnimationFrame(() => {
+              // 计算 keep 的 last，用于位移补偿
+              const last = new Map();
+              keep.forEach((el) => {
+                const rect = el.getBoundingClientRect();
+                last.set(el, { left: rect.left, top: rect.top });
+              });
+
+              keep.forEach((el) => {
+                const a = first.get(el);
+                const b = last.get(el);
+                if (a && b && el instanceof HTMLElement) {
+                  const dx = a.left - b.left;
+                  const dy = a.top - b.top;
+                  el.style.transition = 'none';
+                  el.style.transform = `translate(${dx}px, ${dy}px)`;
+                }
+              });
+
+              requestAnimationFrame(() => {
+                const all = [...keep, ...show];
+                all.forEach((el, i) => {
+                  setTimeout(() => {
+                    el.classList.add('anime-paginate-animating');
+                    if (keep.includes(el) && el instanceof HTMLElement) {
+                      el.style.transition = '';
+                      el.style.transform = '';
+                    }
+                    if (show.includes(el) && el instanceof HTMLElement) {
+                      el.classList.remove('anime-paginate-fade-in');
+                      el.classList.add('anime-paginate-fade-in-active');
+                      el.style.transition = '';
+                      el.style.opacity = '1';
+                      el.style.transform = 'scale(1)';
+                    }
+                  }, i * 12);
+                });
+
+                setTimeout(() => {
+                  all.forEach((el) => {
+                    el.classList.remove('anime-paginate-animating', 'anime-paginate-fade-in-active');
+                    if (el instanceof HTMLElement) {
+                      el.style.transition = '';
+                      el.style.transform = '';
+                      el.style.opacity = '';
+                    }
+                  });
+                }, 420 + all.length * 12);
+              });
+            });
+          }, 80);
+        }
+
         function updateCountsForSearch() {
           const term = ((searchInput && searchInput.value) || '').trim().toLowerCase();
           const matches = allItems.filter((it) => matchesSearch(it, term));
@@ -1173,8 +1271,9 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             if (i === state.currentPage) btn.classList.add('active');
             btn.addEventListener('click', () => {
               state.currentPage = i;
-              applyPagination(state.lastFiltered.length ? state.lastFiltered : computeFiltered());
-              updatePaginationUI((state.lastFiltered.length ? state.lastFiltered : computeFiltered()).length);
+              const filtered = state.lastFiltered.length ? state.lastFiltered : computeFiltered();
+              applyPagination(filtered, true);
+              updatePaginationUI(filtered.length);
             });
             pageNumbersContainer.appendChild(btn);
           }
@@ -1187,18 +1286,38 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           if (lastBtn) lastBtn.disabled = onLast;
         }
 
-        function applyPagination(filtered) {
+        // 仅分页的显示更新（支持 FLIP）
+        function applyPagination(filtered, withFlip = false) {
           const list = filtered || computeFiltered();
           state.itemsPerPage = getItemsPerPageByLayout();
 
           const startIndex = (state.currentPage - 1) * state.itemsPerPage;
           const endIndex = startIndex + state.itemsPerPage;
 
-          const showSet = new Set(list.slice(startIndex, endIndex));
-          allItems.forEach((el) => {
-            if (showSet.has(el)) el.classList.remove('is-paginated-out');
-            else el.classList.add('is-paginated-out');
-          });
+          const target = list.slice(startIndex, endIndex);
+          const showSet = new Set(target);
+
+          if (!withFlip || state.reduceMotion) {
+            allItems.forEach((el) => {
+              if (showSet.has(el)) el.classList.remove('is-paginated-out');
+              else el.classList.add('is-paginated-out');
+            });
+            return;
+          }
+
+          // 仅分页相关的 FLIP：不改动 is-filtered-out / is-searched-out
+          const beforeVisible = allItems.filter(el =>
+            !el.classList.contains('is-filtered-out') &&
+            !el.classList.contains('is-searched-out') &&
+            !el.classList.contains('is-paginated-out')
+          );
+          const afterVisible = target;
+
+          const keep = afterVisible.filter(el => beforeVisible.includes(el));
+          const show = afterVisible.filter(el => !beforeVisible.includes(el));
+          const hide = beforeVisible.filter(el => !afterVisible.includes(el));
+
+          flipAnimatePagination(keep, show, hide);
         }
 
         // 刷新全部（支持触发 FLIP 重排）
@@ -1227,11 +1346,11 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
 
             state.currentPage = 1;
             state.pageWindowStart = 1;
-            applyPagination(filtered);
+            // 筛选/搜索已做 FLIP；分页这里不重复动画
+            applyPagination(filtered, false);
             updatePaginationUI(filtered.length);
             updateCountsForSearch();
 
-            // 点击按钮/搜索时的重排效果（与切换到网格模式类似）
             if (triggerFLIP) {
               const afterVisible = allItems.filter(el =>
                 !el.classList.contains('is-filtered-out') &&
@@ -1261,17 +1380,16 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         if (searchInput) {
           const inputHandler = function() {
             clearTimeout(state.searchDebounce);
-            // 搜索时也触发重排动画（轻微减少防抖时长，提升手感）
             state.searchDebounce = window.setTimeout(() => refreshAll(true), 200);
           };
           const keyHandler = function(e) {
             if (e.key === 'Escape') {
               searchInput.value = '';
-              refreshAll(true); // ESC 清空并重排
+              refreshAll(true);
             } else if (e.key === 'Enter') {
               state.currentPage = 1;
               state.pageWindowStart = 1;
-              refreshAll(true); // Enter 提交搜索并重排
+              refreshAll(true);
             }
           };
           searchInput.addEventListener('input', inputHandler);
@@ -1280,19 +1398,19 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           state.listeners.push({ el: searchInput, type: 'keydown', handler: keyHandler });
         }
 
-        // 分页按钮（分页不做重排动画，以免干扰视觉焦点）
+        // 分页按钮（现在使用“仅分页”FLIP）
         if (firstBtn && prevBtn && nextBtn && lastBtn) {
           const firstH = () => withFiltered((filtered) => {
             const totalPages = Math.ceil(filtered.length / getItemsPerPageByLayout());
             if (state.currentPage !== 1 && totalPages > 0) {
               state.currentPage = 1; state.pageWindowStart = 1;
-              applyPagination(filtered); updatePaginationUI(filtered.length);
+              applyPagination(filtered, true); updatePaginationUI(filtered.length);
             }
           });
           const prevH = () => withFiltered((filtered) => {
             if (state.currentPage > 1) {
               state.currentPage--; state.pageWindowStart = Math.max(1, state.pageWindowStart - 1);
-              applyPagination(filtered); updatePaginationUI(filtered.length);
+              applyPagination(filtered, true); updatePaginationUI(filtered.length);
             }
           });
           const nextH = () => withFiltered((filtered) => {
@@ -1300,14 +1418,14 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             if (state.currentPage < totalPages) {
               state.currentPage++; const maxStart = Math.max(1, totalPages - state.windowSize + 1);
               state.pageWindowStart = Math.min(maxStart, state.pageWindowStart + 1);
-              applyPagination(filtered); updatePaginationUI(filtered.length);
+              applyPagination(filtered, true); updatePaginationUI(filtered.length);
             }
           });
           const lastH = () => withFiltered((filtered) => {
             const totalPages = Math.ceil(filtered.length / getItemsPerPageByLayout());
             if (totalPages > 0 && state.currentPage !== totalPages) {
               state.currentPage = totalPages; state.pageWindowStart = Math.max(1, totalPages - state.windowSize + 1);
-              applyPagination(filtered); updatePaginationUI(filtered.length);
+              applyPagination(filtered, true); updatePaginationUI(filtered.length);
             }
           });
           firstBtn.addEventListener('click', firstH);
@@ -1323,10 +1441,10 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         // 初次渲染
         refreshAll(false);
 
-        // 在布局变化时刷新每页数量+分页
+        // 在布局变化时刷新每页数量+分页（不做分页动画）
         function updateAfterLayout() {
           const filtered = state.lastFiltered.length ? state.lastFiltered : computeFiltered();
-          applyPagination(filtered);
+          applyPagination(filtered, false);
           updatePaginationUI(filtered.length);
         }
         window.__animePage.updateAfterLayout = updateAfterLayout;
