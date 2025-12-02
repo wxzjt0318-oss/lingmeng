@@ -362,10 +362,10 @@ void isBothSidebarMode;
         {ANIME_MODE !== 'local' && BANGUMI_USER_ID === 'your-user-id' ? (
           <div class="text-center py-12">
             <div class="text-5xl mb-4">😢</div>
-            <h3 class="text-xl font-medium text黑/80 dark:text白/80 mb-2">
+            <h3 class="text-xl font-medium text-black/80 dark:text-white/80 mb-2">
               {i18n(I18nKey.animeEmpty)}
             </h3>
-            <p class="text黑/60 dark:text白/60">
+            <p class="text-black/60 dark:text-white/60">
               请在 src/config.ts 文件中设置你的 Bangumi 用户ID
             </p>
           </div>
@@ -389,10 +389,10 @@ void isBothSidebarMode;
                         alt={anime.title}
                         class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                       />
-                      <div class="absolute inset-0 bg-gradient-to-t from黑/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <div class="absolute inset-0 flex items-center justify-center">
-                          <div class="w-12 h-12 rounded-full bg白/90 flex items-center justify-center">
-                            <svg class="w-6 h-6 text灰-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                          <div class="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">
+                            <svg class="w-6 h-6 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
                               <path d="M8 5v14l11-7z"/>
                             </svg>
                           </div>
@@ -410,7 +410,7 @@ void isBothSidebarMode;
                     <div class="absolute top-2 right-2">
                       <div class="bg-black/70 text-white rounded-[6px] border border-white/20 shadow-sm inline-flex items-center gap-1 px-2 py-1">
                         <svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l-1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.趩-.38-1.81.588-1.81h3.461a1 1 0 00.951-.趩l1.07-3.292z"/>
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
                         </svg>
                         <span class="text-[10px] font-semibold leading-none">{anime.rating}</span>
                       </div>
@@ -418,8 +418,8 @@ void isBothSidebarMode;
                     
                     <!-- 进度条 - 在封面底部 -->
                     {anime.status === 'watching' && (
-                      <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from黑/80 to-transparent p-2">
-                        <div class="w-full bg白/20 rounded-full h-1.5 mb-1">
+                      <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                        <div class="w-full bg-white/20 rounded-full h-1.5 mb-1">
                           <div class="bg-gradient-to-r from-emerald-400 to-teal-400 h-1.5 rounded-full transition-all duration-300" style={`width: ${progressPercent}%`}></div>
                         </div>
                         <div class="text-white text-xs font-medium">
@@ -431,22 +431,22 @@ void isBothSidebarMode;
                   
                   <!-- 内容区域 - 紧凑设计 -->
                   <div class="p-3">
-                    <h3 class="text-sm font-bold text黑/90 dark:text白/90 mb-1 line-clamp-2 leading-tight">{anime.title}</h3>
-                    <p class="text黑/60 dark:text白/60 text-xs mb-2 line-clamp-2">{anime.description}</p>
+                    <h3 class="text-sm font-bold text-black/90 dark:text-white/90 mb-1 line-clamp-2 leading-tight">{anime.title}</h3>
+                    <p class="text-black/60 dark:text-white/60 text-xs mb-2 line-clamp-2">{anime.description}</p>
                     
                     <!-- 详细信息 - 更紧凑 -->
                     <div class="space-y-1 text-xs">
                       <div class="flex justify-between">
-                        <span class="text黑/50 dark:text白/50">{i18n(I18nKey.animeYear)}</span>
-                        <span class="text黑/70 dark:text白/70">{anime.year}</span>
+                        <span class="text-black/50 dark:text-white/50">{i18n(I18nKey.animeYear)}</span>
+                        <span class="text-black/70 dark:text-white/70">{anime.year}</span>
                       </div>
-                      <div class="flex justify之间">
-                        <span class="text黑/50 dark:text白/50">{i18n(I18nKey.animeStudio)}</span>
-                        <span class="text黑/70 dark:text白/70 truncate ml-2">{anime.studio}</span>
+                      <div class="flex justify-between">
+                        <span class="text-black/50 dark:text-white/50">{i18n(I18nKey.animeStudio)}</span>
+                        <span class="text-black/70 dark:text-white/70 truncate ml-2">{anime.studio}</span>
                       </div>
                       <div class="flex flex-wrap gap-1 mt-2">
                         {anime.genre.map(g => (
-                          <span class="px-1.5 py-0.5 bg-[var(--btn-regular-bg)] text黑/70 dark:text白/70 rounded text-xs">{g}</span>
+                          <span class="px-1.5 py-0.5 bg-[var(--btn-regular-bg)] text-black/70 dark:text-white/70 rounded text-xs">{g}</span>
                         ))}
                       </div>
                     </div>
@@ -458,10 +458,10 @@ void isBothSidebarMode;
         ) : (
           <div class="text-center py-12">
             <div class="text-5xl mb-4">😢</div>
-            <h3 class="text-xl font-medium text黑/80 dark:text白/80 mb-2">
+            <h3 class="text-xl font-medium text-black/80 dark:text-white/80 mb-2">
               {i18n(I18nKey.animeEmpty)}
             </h3>
-            <p class="text黑/60 dark:text白/60">
+            <p class="text-black/60 dark:text-white/60">
               {ANIME_MODE === 'local' ? i18n(I18nKey.animeEmptyLocal) : i18n(I18nKey.animeEmptyBangumi)}
             </p>
           </div>
@@ -707,7 +707,7 @@ void isBothSidebarMode;
     }
     .filter-tag:hover:not(.active) { background: var(--btn-hover-bg); border-color: var(--primary); transform: translateY(-1px); }
     .filter-tag.active { background: var(--primary); color: white; border-color: var(--primary); }
-    .filter-tag.active:hover { background: var(--primary) !important; color: white !重要; border-color: var(--primary) !important; transform: translateY(-1px); }
+    .filter-tag.active:hover { background: var(--primary) !important; color: white !important; border-color: var(--primary) !important; transform: translateY(-1px); }
     
     /* 动画卡片样式 - 使用 FLIP 动画技术实现洗牌效果 */
     [data-anime-status] { transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -731,7 +731,7 @@ void isBothSidebarMode;
     .stats-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
     .stat-card { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; text-align: center; }
     
-    .pagination-container { margin-top: 2rem; display: flex; justify-center: center; align-items: center; gap: 0.5rem; }
+    .pagination-container { margin-top: 2rem; display: flex; justify-content: center; align-items: center; gap: 0.5rem; }
     .pagination-btn {
       padding: 0.5rem 1rem; border: 1px solid var(--line-divider); border-radius: var(--radius-large);
       background: var(--btn-regular-bg); color: var(--btn-content);
