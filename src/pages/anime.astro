@@ -1040,6 +1040,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           return fn(filtered);
         }
 
+        // 通用 FLIP 重排动画（用于：过滤/搜索等按钮行为）
         function flipAnimate(keep, show, hide) {
           if (state.reduceMotion) {
             hide.forEach((el) => el.classList.add('is-filtered-out'));
@@ -1142,7 +1143,6 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           const activeStatus = (activeStatusEl && activeStatusEl.getAttribute('data-status')) || 'all';
           const showing = computeFiltered().length;
           const label = activeStatus === 'all' ? 'All' : activeStatus;
-          // 使用上方已声明的 announce，避免重复声明导致未使用提示
           if (announce) {
             announce.textContent = `Showing ${showing} item(s) for "${label}"${term ? ` with search "${term}"` : ''}.`;
           }
@@ -1201,8 +1201,12 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           });
         }
 
+        // 刷新全部（支持触发 FLIP 重排）
         function refreshAll(triggerFLIP = false) {
-          const beforeVisible = allItems.filter(el => !el.classList.contains('is-filtered-out') && !el.classList.contains('is-searched-out'));
+          const beforeVisible = allItems.filter(el =>
+            !el.classList.contains('is-filtered-out') &&
+            !el.classList.contains('is-searched-out')
+          );
 
           withFiltered((filtered) => {
             const activeStatusEl = document.querySelector('.filter-tag.active');
@@ -1227,8 +1231,12 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             updatePaginationUI(filtered.length);
             updateCountsForSearch();
 
+            // 点击按钮/搜索时的重排效果（与切换到网格模式类似）
             if (triggerFLIP) {
-              const afterVisible = allItems.filter(el => !el.classList.contains('is-filtered-out') && !el.classList.contains('is-searched-out'));
+              const afterVisible = allItems.filter(el =>
+                !el.classList.contains('is-filtered-out') &&
+                !el.classList.contains('is-searched-out')
+              );
               const keep = afterVisible.filter(el => beforeVisible.includes(el));
               const show = afterVisible.filter(el => !beforeVisible.includes(el));
               const hide = beforeVisible.filter(el => !afterVisible.includes(el));
@@ -1237,33 +1245,33 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           });
         }
 
-        // 绑定过滤按钮（含无障碍）
+        // 绑定过滤按钮（含无障碍）— 点击触发重排动画
         filterTags.forEach(tag => {
           const handler = () => {
             if (tag.classList.contains('active')) return;
             filterTags.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-pressed', 'false'); });
             tag.classList.add('active'); tag.setAttribute('aria-pressed','true');
-            refreshAll(true);
+            refreshAll(true); // 启用按钮点击的重排动画
           };
           tag.addEventListener('click', handler);
           state.listeners.push({ el: tag, type: 'click', handler });
         });
 
-        // 搜索输入（输入防抖 + ESC 清空 + Enter 跳至第一页）
+        // 搜索输入（输入防抖 + ESC 清空 + Enter 跳至第一页）— 全部启用重排动画
         if (searchInput) {
           const inputHandler = function() {
             clearTimeout(state.searchDebounce);
-            state.searchDebounce = window.setTimeout(() => refreshAll(false), 300);
+            // 搜索时也触发重排动画（轻微减少防抖时长，提升手感）
+            state.searchDebounce = window.setTimeout(() => refreshAll(true), 200);
           };
           const keyHandler = function(e) {
             if (e.key === 'Escape') {
               searchInput.value = '';
-              refreshAll(false);
+              refreshAll(true); // ESC 清空并重排
             } else if (e.key === 'Enter') {
-              const filtered = computeFiltered();
-              state.currentPage = 1; state.pageWindowStart = 1;
-              applyPagination(filtered); updatePaginationUI(filtered.length);
-              updateCountsForSearch();
+              state.currentPage = 1;
+              state.pageWindowStart = 1;
+              refreshAll(true); // Enter 提交搜索并重排
             }
           };
           searchInput.addEventListener('input', inputHandler);
@@ -1272,7 +1280,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           state.listeners.push({ el: searchInput, type: 'keydown', handler: keyHandler });
         }
 
-        // 分页按钮（一次事件内只算一次 filtered）
+        // 分页按钮（分页不做重排动画，以免干扰视觉焦点）
         if (firstBtn && prevBtn && nextBtn && lastBtn) {
           const firstH = () => withFiltered((filtered) => {
             const totalPages = Math.ceil(filtered.length / getItemsPerPageByLayout());
