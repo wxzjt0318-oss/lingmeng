@@ -9,7 +9,13 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
 // 扩展状态类型，包含 onhold、dropped，解决 TS 比较错误
 type LocalAnimeItem = (typeof localAnimeList)[number];
 type AnimeStatus = 'watching' | 'completed' | 'planned' | 'onhold' | 'dropped';
-type AnimeItem = Omit<LocalAnimeItem, 'status'> & { status: AnimeStatus; updatedAt?: string };
+// 移除可能存在的 year 字段；新增 airDate/dateDisplay 字段以替代
+type AnimeItem = Omit<LocalAnimeItem, 'status' | 'year'> & {
+  status: AnimeStatus;
+  updatedAt?: string;
+  airDate?: string;
+  dateDisplay?: string;
+};
 
 // 检查番剧页面是否启用（去重）
 if (!siteConfig.featurePages.anime) {
@@ -26,6 +32,46 @@ const isValidUserId = !!BANGUMI_USER_ID && BANGUMI_USER_ID !== "your-user-id";
 
 // 获取番剧数据模式(不需要更改，请在主配置src/config.ts中修改)
 const ANIME_MODE = siteConfig.anime?.mode || "bangumi";
+
+// 日期处理：解析 Bangumi 的 YYYY / YYYY-MM / YYYY-MM-DD，给出展示与排序用时间戳
+function parseBangumiDate(raw?: string): { display: string; sortKey: number } {
+  if (!raw) return { display: "", sortKey: 0 };
+
+  // 仅支持规范的 4 位年，可选 -MM 和 -DD
+  const m = raw.match(/^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/);
+  if (!m) {
+    // 非规范格式直接原样展示，排序尽量解析；解析失败则置 0
+    const parsed = Date.parse(raw);
+    return { display: raw, sortKey: Number.isNaN(parsed) ? 0 : parsed };
+  }
+
+  const year = Number(m[1]);
+  const month = m[2] ? Number(m[2]) : undefined;
+  const day = m[3] ? Number(m[3]) : undefined;
+
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+
+  // 展示：不强行补全，按实际精度展示
+  let display = `${year}`;
+  if (month) display += `-${pad(month)}`;
+  if (day) display += `-${pad(day)}`;
+
+  // 排序：使用末日规则，保证较少精度也能稳定参与排序
+  // - 只有年：用当年最后一天
+  // - 年月：用该月最后一天
+  // - 年月日：用该具体日期
+  let sortKey = 0;
+  if (day && month) {
+    sortKey = Date.UTC(year, month - 1, day);
+  } else if (month) {
+    // 该月最后一天：下月 0 号即本月最后一天
+    sortKey = Date.UTC(year, month, 0);
+  } else {
+    sortKey = Date.UTC(year, 11, 31);
+  }
+
+  return { display, sortKey };
+}
 
 // 获取单个条目相关人员信息
 async function fetchSubjectPersons(subjectId: number) {
@@ -67,7 +113,7 @@ async function fetchBangumiCollection(userId: string, subjectType: number, type:
   }
 }
 
-// 获取Bangumi数据转换为页面所需格式
+// 获取Bangumi数据转换为页面所需格式（日期自适应）
 async function processBangumiData(data: any, status: AnimeStatus): Promise<AnimeItem[]> {
   if (!data || !data.data) return [];
 
@@ -76,9 +122,12 @@ async function processBangumiData(data: any, status: AnimeStatus): Promise<Anime
       // 相关人员信息（用于找制作方）
       const subjectPersons = await fetchSubjectPersons(item.subject_id);
 
+      // 日期：Bangumi 可能是 YYYY / YYYY-MM / YYYY-MM-DD，自动识别展示与排序
       const fullDate = item.subject?.date || "";
-      // 修改：year 字段改为完整日期显示（若无则 Unknown）
-      const year = fullDate || "Unknown";
+      const parsedDate = parseBangumiDate(fullDate);
+      const airDate = fullDate || ""; // 原始值保留
+      const dateDisplay = parsedDate.display; // 展示用
+
       const rating = typeof item.rate === "number" ? Number(item.rate.toFixed(1)) : 0;
       const progress = item.ep_status || 0;
       const totalEpisodes =
@@ -110,7 +159,8 @@ async function processBangumiData(data: any, status: AnimeStatus): Promise<Anime
         cover: item.subject?.images?.medium || "/assets/anime/default.webp",
         description: (item.subject?.short_summary || item.subject?.name_cn || "").trimStart(),
         episodes: `${totalEpisodes} episodes`,
-        year, // 现在为完整日期（如 2024-07-05），不再仅年
+        airDate,
+        dateDisplay,
         genre: item.subject?.tags ? item.subject.tags.slice(0, 3).map((tag: any) => tag.name) : ["Unknown"],
         studio,
         link: item.subject?.id ? `https://bgm.tv/subject/${item.subject.id}` : "#",
@@ -128,7 +178,7 @@ async function processBangumiData(data: any, status: AnimeStatus): Promise<Anime
 // 根据模式获取番剧列表（修复：当 userId 未设置时不调用 API）
 let animeList: AnimeItem[] = [];
 if (ANIME_MODE === "local") {
-  animeList = localAnimeList as AnimeItem[];
+  animeList = localAnimeList as unknown as AnimeItem[];
 } else if (!isValidUserId) {
   // 未设置有效 userId：不调用任何 API，留给前端提示
   animeList = [];
@@ -194,6 +244,14 @@ function getStatusInfo(status: string) {
   }
 }
 
+// 安全解析更新时间为时间戳（用于 updatedAt）
+function toTimeStrict(input?: string) {
+  if (!input) return 0;
+  // updatedAt 假设是完整的 ISO/日期字符串；失败则回退 0
+  const t = Date.parse(input);
+  return Number.isNaN(t) ? 0 : t;
+}
+
 // 计算统计数据
 const stats = {
   total: animeList.length,
@@ -217,18 +275,17 @@ const lastUpdated = new Date().toLocaleString("zh-CN", {
   timeZone: "Asia/Shanghai",
 });
 
-// 安全解析日期为时间戳
-function toTime(input?: string) {
-  if (!input) return 0;
-  const t = Date.parse(input);
-  return Number.isNaN(t) ? 0 : t;
-}
-
-// 按更新时间/开始时间排序（修复原先依赖 endDate 的排序无效问题）
+// 按更新时间/开始时间排序（更新：对 YYYY / YYYY-MM 自适应排序）
 const sortedAnimeList = [...animeList].sort((a, b) => {
-  const aTime = toTime((a as any).updatedAt) || toTime(a.endDate) || toTime(a.startDate);
-  const bTime = toTime((b as any).updatedAt) || toTime(b.endDate) || toTime(b.startDate);
-  return bTime - aTime;
+  const aUpdated = toTimeStrict((a as any).updatedAt);
+  const bUpdated = toTimeStrict((b as any).updatedAt);
+  if (bUpdated !== aUpdated) return bUpdated - aUpdated;
+
+  const aDate = a.startDate || a.airDate || a.dateDisplay || "";
+  const bDate = b.startDate || b.airDate || b.dateDisplay || "";
+  const aSort = parseBangumiDate(aDate).sortKey;
+  const bSort = parseBangumiDate(bDate).sortKey;
+  return bSort - aSort;
 });
 
 // 修复 TS(6133): 在模板中使用到的变量在前置脚本中显式标记为已读
@@ -256,15 +313,15 @@ void isBothSidebarMode;
         <!-- 统计信息卡片 -->
         <div class="stats-container grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div class="stat-card bg-[var(--card-bg)] border border-[var(--line-divider)] rounded-[var(--radius-large)] p-4 flex flex-col items-center justify-center">
-            <div class="text-xs text-black/60 dark:text-white/60 mb-1">总数</div>
+            <div class="text-xs text-black/60 dark:text-white/60 mb-1">{i18n(I18nKey.animeStatsTotal)}</div>
             <div class="text-2xl font-bold text-[var(--primary)]">{stats.total}</div>
           </div>
           <div class="stat-card bg-[var(--card-bg)] border border-[var(--line-divider)] rounded-[var(--radius-large)] p-4 flex flex-col items-center justify-center">
-            <div class="text-xs text-black/60 dark:text-white/60 mb-1">综合评分</div>
+            <div class="text-xs text-black/60 dark:text-white/60 mb-1">{i18n(I18nKey.animeStatsAverageRating)}</div>
             <div class="text-2xl font-bold text-blue-500">{stats.avgRating}</div>
           </div>
           <div class="stat-card bg-[var(--card-bg)] border border-[var(--line-divider)] rounded-[var(--radius-large)] p-4 flex flex-col items-center justify-center">
-            <div class="text-xs text-black/60 dark:text-white/60 mb-1">最后更新时间</div>
+            <div class="text-xs text-black/60 dark:text-white/60 mb-1">{i18n(I18nKey.animeStatsLastUpdated)}</div>
             <div class="text-sm font-medium text-black/80 dark:text-white/80">{lastUpdated}</div>
           </div>
         </div>
@@ -275,7 +332,7 @@ void isBothSidebarMode;
             <input 
               type="text" 
               id="search-input" 
-              placeholder="搜索番剧名称、类型、制作方..."
+              placeholder={i18n(I18nKey.animeSearchPlaceholder)}
               class="w-full px-4 py-3 pl-12 rounded-[var(--radius-large)] border border-[var(--line-divider)] bg-[var(--card-bg)] text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
             />
             <div class="absolute left-4 top-1/2 transform -translate-y-1/2 text-[var(--text-secondary)]">
@@ -286,7 +343,7 @@ void isBothSidebarMode;
           </div>
         </div>
         
-        <!-- 过滤按钮 - 参考Firefly设计 -->
+        <!-- 过滤按钮 -->
         <div class="mb-6">
           <div class="filter-container flex flex-wrap gap-2">
             <button class="filter-tag active" data-status="all">
@@ -331,7 +388,7 @@ void isBothSidebarMode;
               {i18n(I18nKey.animeEmpty)}
             </h3>
             <p class="text-black/60 dark:text-white/60">
-              请在 src/config.ts 文件中设置你的 Bangumi 用户ID
+              {i18n(I18nKey.animeBangumiSetUserId)}
             </p>
           </div>
         ) : animeList.length > 0 ? (
@@ -402,8 +459,8 @@ void isBothSidebarMode;
                     <!-- 详细信息 - 更紧凑 -->
                     <div class="space-y-1 text-xs">
                       <div class="flex justify-between">
-                        <span class="text-black/50 dark:text-white/50">{i18n(I18nKey.animeYear)}</span>
-                        <span class="text-black/70 dark:text-white/70">{anime.startDate || anime.year}</span>
+                        <span class="text-black/50 dark:text-white/50">{i18n(I18nKey.animeAiredDate)}</span>
+                        <span class="text-black/70 dark:text-white/70">{anime.dateDisplay || anime.airDate || anime.startDate || ""}</span>
                       </div>
                       <div class="flex justify-between">
                         <span class="text-black/50 dark:text-white/50">{i18n(I18nKey.animeStudio)}</span>
@@ -436,7 +493,7 @@ void isBothSidebarMode;
       <!-- 分页控件 -->
       <div id="pagination-container" class="pagination-container flex justify-center items-center gap-2 mt-8">
         <button id="first-page" class="pagination-btn px-3 py-2 rounded-md bg-[var(--btn-regular-bg)] text-[var(--btn-content)] border border-[var(--line-divider)] disabled:opacity-50 disabled:cursor-not-allowed">
-          « 首页
+          « {i18n(I18nKey.firstPage)}
         </button>
         <button id="prev-page" class="pagination-btn px-3 py-2 rounded-md bg-[var(--btn-regular-bg)] text-[var(--btn-content)] border border-[var(--line-divider)] disabled:opacity-50 disabled:cursor-not-allowed">
           &lt; {i18n(I18nKey.prevPage)}
@@ -446,7 +503,7 @@ void isBothSidebarMode;
           {i18n(I18nKey.nextPage)} &gt;
         </button>
         <button id="last-page" class="pagination-btn px-3 py-2 rounded-md bg-[var(--btn-regular-bg)] text-[var(--btn-content)] border border-[var(--line-divider)] disabled:opacity-50 disabled:cursor-not-allowed">
-          尾页 »
+          {i18n(I18nKey.lastPage)} »
         </button>
       </div>
     </div>
