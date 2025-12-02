@@ -416,7 +416,7 @@ void isBothSidebarMode;
             <div class="text-2xl font-bold text-[var(--primary)]">{stats.total}</div>
           </div>
           <div class="stat-card bg-[var(--card-bg)] border border-[var(--line-divider)] rounded-[var(--radius-large)] p-4 flex flex-col items-center justify-center">
-            <div class="text-xs text-black/60 dark:text-white/60 mb-1">综合评分</div>
+            <div class="text-xs text-black/60 dark:text白/60 mb-1">综合评分</div>
             <div class="text-2xl font-bold text-blue-500">{stats.avgRating}</div>
           </div>
           <div class="stat-card bg-[var(--card-bg)] border border-[var(--line-divider)] rounded-[var(--radius-large)] p-4 flex flex-col items-center justify-center">
@@ -455,7 +455,7 @@ void isBothSidebarMode;
             </button>
             <button class="filter-tag" data-status="planned">
               {i18n(I18nKey.animeStatusPlanned)} 
-              <span class="ml-1 bg-amber-500 text白 text-xs rounded-full px-2 py-0.5">({animeList.filter(a => a.status === 'planned').length})</span>
+              <span class="ml-1 bg-amber-500 text-white text-xs rounded-full px-2 py-0.5">({animeList.filter(a => a.status === 'planned').length})</span>
             </button>
             <button class="filter-tag" data-status="completed">
               {i18n(I18nKey.animeStatusCompleted)} 
@@ -818,7 +818,7 @@ void isBothSidebarMode;
     }
   </style>
 
-  <!-- 过滤功能脚本（保持原联动与去重监听；分页每页固定10个） -->
+  <!-- 过滤功能脚本（保持原联动与去重监听；分页每页固定10个，PC列表模式为8个） -->
   <script is:inline>
     // 事件监听器存储，用于防止重复绑定
     if (typeof window.animeFilterEventListeners === 'undefined') {
@@ -949,19 +949,22 @@ void isBothSidebarMode;
       console.log('Filter buttons initialized with', filterTags.length, 'buttons');
     }
     
-    // 分页（每页固定 10 个）
+    // 分页（PC列表模式 8 个；其他 10 个）
     let currentPage = 1;
-    let itemsPerPage = 10; // 固定 10
+    let itemsPerPage = 10;
     let filteredItems = Array.from(document.querySelectorAll('[data-anime-status]'));
     let pageWindowStart = 1;
     const windowSize = 5;
 
     function getItemsPerPageByLayout() {
-      return 10; // 固定 10，不随布局变化
+      const container = document.getElementById('anime-list-container');
+      const isListMode = container?.classList.contains('list-mode');
+      const isPC = window.matchMedia('(min-width: 768px)').matches;
+      // PC + 列表模式：8；其他保持 10
+      return (isListMode && isPC) ? 8 : 10;
     }
     
     function updatePagination() {
-      // 固定每页 10 个
       itemsPerPage = getItemsPerPageByLayout();
 
       const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
@@ -1005,7 +1008,6 @@ void isBothSidebarMode;
     }
     
     function showPage(page) {
-      // 固定每页 10 个
       itemsPerPage = getItemsPerPageByLayout();
 
       const startIndex = (page - 1) * itemsPerPage;
@@ -1137,6 +1139,12 @@ void isBothSidebarMode;
           showPage(currentPage);
           updatePagination();
         }, 300);
+      });
+
+      // 布局切换时刷新分页（确保 PC 列表模式显示 8 个）
+      window.addEventListener('layoutChange', function() {
+        showPage(currentPage);
+        updatePagination();
       });
     });
     
