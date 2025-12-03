@@ -82,7 +82,6 @@ async function diskCacheGet<T>(key: string, ttlHours: number): Promise<T | null>
   try {
     await fs.mkdir(cacheRoot, { recursive: true }).catch(() => {});
     const file = path.resolve(cacheRoot, `${key}.json`);
-    // 兼容字符串/Buffer
     const buf = await fs.readFile(file, { encoding: "utf8" as any });
     const jsonStr = typeof buf === "string" ? buf : String(buf);
     const parsed = JSON.parse(jsonStr) as CacheEntry<T>;
@@ -103,7 +102,7 @@ async function diskCacheSet<T>(key: string, data: T): Promise<void> {
   }
 }
 
-// fetch 带重试与 429/5xx 退避；非可重试错误直接抛出（保留第一版错误处理）
+// fetch 带重试与 429/5xx 退避
 async function fetchWithRetry(url: string, init?: RequestInit, retries = 4, baseDelayMs = 400): Promise<Response> {
   let lastErr: unknown = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -178,7 +177,7 @@ function getStudioFromInfobox(subject: any): string | undefined {
   return undefined;
 }
 
-// 展示日期：优先 YYYY-MM-DD / YYYY-MM / YYYY（保留第一版）
+// 展示日期
 function toDisplayYearOrYearMonth(input?: string): string {
   if (!input) return T.unknown;
   const s = input.trim();
@@ -206,7 +205,7 @@ function toDisplayYearOrYearMonth(input?: string): string {
   return T.unknown;
 }
 
-// toTime（采用第二版：修复 YYYY-MM 的解析）
+// toTime（修复 YYYY-MM 的解析）
 function toTime(input?: string) {
   if (!input) return 0;
   const s = input.trim();
@@ -216,7 +215,7 @@ function toTime(input?: string) {
   return Number.isNaN(t) ? 0 : t;
 }
 
-// 人员与详情 API（保留第一版更严格的错误处理/CT 检查）
+// 人员与详情 API
 async function fetchSubjectPersonsRaw(subjectId: number) {
   try {
     const res = await fetchWithRetry(`${BANGUMI_API_BASE}/v0/subjects/${subjectId}/persons`);
@@ -331,7 +330,7 @@ async function fetchBangumiCollection(userId: string, subjectType: number, type:
 // 统一 episodes 文案
 const episodesText = (n?: number) => (typeof n === "number" && n > 0 ? `${n} ${T.episodes}` : T.unknown);
 
-// 状态信息（采用第二版的 helper）
+// 状态信息
 function getStatusInfo(status: string) {
   switch (status) {
     case "watching":
@@ -373,7 +372,7 @@ function getStatusInfo(status: string) {
   }
 }
 
-// 转换为页面数据（保留第一版结构 + updatedAt 修复）
+// 转换为页面数据
 async function processBangumiData(data: any, status: AnimeStatus): Promise<AnimeItem[]> {
   if (!data || !data.data) return [];
   const items: any[] = data.data;
@@ -423,7 +422,6 @@ async function processBangumiData(data: any, status: AnimeStatus): Promise<Anime
           .filter(Boolean)
       : [];
 
-    // updatedAt 修复：仅当可解析时转成 ISO，否则留空
     const updatedAtRaw =
       item.updated_at || item.comment_updated_at || item.created_at || detail?.date || subject?.date || "";
     let updatedAt: string | undefined = undefined;
@@ -550,13 +548,13 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             <div class="text-xs text-black/60 dark:text-white/60 mb-1">{T.statsAvgRating}</div>
             <div class="text-2xl font-bold text-blue-500">{stats.avgRating}</div>
           </div>
-          <div class="stat-card bg-[var(--card-bg)] border border-[var(--line-divider)] rounded-[var(--radius-large)] p-4 flex flex-col items-center justify-center">
+          <div class="stat-card bg-[var(--card-bg)] border border-[var(--line-divider)] rounded-[var(--radius-large)] p-4 flex flex-col items-center justify-content-center">
             <div class="text-xs text-black/60 dark:text-white/60 mb-1">{T.statsLastUpdated}</div>
             <div class="text-sm font-medium text-black/80 dark:text-white/80">{lastUpdated}</div>
           </div>
         </div>
 
-        <!-- 屏幕阅读器可读结果公告（保留第一版 a11y） -->
+        <!-- 屏幕阅读器可读结果公告 -->
         <div id="list-announce" aria-live="polite" class="visually-hidden"></div>
         
         <!-- 搜索框 -->
@@ -577,7 +575,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           </div>
         </div>
         
-        <!-- 过滤按钮（计数会根据搜索更新；保留第一版的计数 id 以便动态更新） -->
+        <!-- 过滤按钮 -->
         <div class="mb-6">
           <div class="filter-container flex flex-wrap gap-2">
             <button class="filter-tag active" data-status="all" aria-pressed="true">
@@ -746,37 +744,41 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
   </div>
 
   <script is:inline define:vars={{ isBothSidebarMode }}>
-  // 布局切换动画（保持原逻辑），纯 JS 无 TS 语法（保留第一版）
+  // 布局切换动画（保持原逻辑），仅在本页存在时生效
   (function() {
-    setTimeout(() => {
-      const animeListContainer = document.getElementById("anime-list-container");
-      if (!animeListContainer) {
-        console.debug("anime-list-container not found, skipping layout initialization");
-        return;
-      }
+    function runWhenReady() {
+      const root = document.querySelector('.anime-page');
+      if (!root) return;
 
-      if (typeof window.layoutManager !== 'undefined') {
-        window.layoutManager.init(isBothSidebarMode);
-        const currentLayout = window.layoutManager.getLayout();
-        updateAnimeListLayout(currentLayout);
-        window.layoutManager.checkScreenSizeAndAdjust();
-      } else {
-        setTimeout(() => {
-          if (typeof window.layoutManager !== 'undefined') {
-            window.layoutManager.init(isBothSidebarMode);
-            const currentLayout = window.layoutManager.getLayout();
-            updateAnimeListLayout(currentLayout);
-            window.layoutManager.checkScreenSizeAndAdjust();
-          }
-        }, 300);
-      }
-    }, 50);
+      setTimeout(() => {
+        const animeListContainer = root.querySelector("#anime-list-container");
+        if (!animeListContainer) return;
+
+        if (typeof window.layoutManager !== 'undefined') {
+          window.layoutManager.init(isBothSidebarMode);
+          const currentLayout = window.layoutManager.getLayout();
+          updateAnimeListLayout(currentLayout);
+          window.layoutManager.checkScreenSizeAndAdjust();
+        } else {
+          setTimeout(() => {
+            if (typeof window.layoutManager !== 'undefined') {
+              window.layoutManager.init(isBothSidebarMode);
+              const currentLayout = window.layoutManager.getLayout();
+              updateAnimeListLayout(currentLayout);
+              window.layoutManager.checkScreenSizeAndAdjust();
+            }
+          }, 300);
+        }
+      }, 50);
+    }
 
     function updateAnimeListLayout(layout) {
-      const animeListContainer = document.getElementById("anime-list-container");
+      const root = document.querySelector('.anime-page');
+      if (!root) return;
+      const animeListContainer = root.querySelector("#anime-list-container");
       if (!animeListContainer) return;
 
-      const animeItems = Array.from(document.querySelectorAll('[data-anime-status]'));
+      const animeItems = Array.from(root.querySelectorAll('[data-anime-status]'));
       const firstPositions = new Map();
       animeItems.forEach(item => {
         const rect = item.getBoundingClientRect();
@@ -858,17 +860,21 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
       });
     }
 
-    window.addEventListener("layoutChange", (event) => {
+    function onLayoutChange(event) {
       updateAnimeListLayout(event.detail.layout);
       if (window.__animePage && window.__animePage.updateAfterLayout) {
         window.__animePage.updateAfterLayout();
       }
-    });
+    }
+
+    // 在每次进入页面时运行
+    document.addEventListener('DOMContentLoaded', runWhenReady);
+    window.addEventListener("layoutChange", onLayoutChange);
   })();
   </script>
 
   <style>
-    /* 仅此页字体覆盖，避免全局影响（保留第一版 CSS 范围） */
+    /* 仅此页字体覆盖 */
     .anime-page { --anime-font: 'Noto Sans SC', system-ui, -apple-system, 'Segoe UI', Roboto, 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif; }
     .anime-page, .anime-page * { font-family: var(--anime-font); }
     .card-base { container-type: inline-size; }
@@ -880,7 +886,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
       clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
     }
     
-    /* 布局固定列数（电脑：grid 5 列 / list 4 列；手机降到 2 列） */
+    /* 布局固定列数 */
     .anime-grid-container { transition: grid-template-columns 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
     .anime-grid-container.grid-mode { display: grid; grid-template-columns: repeat(5, 1fr); }
     .anime-grid-container.list-mode { display: grid; grid-template-columns: repeat(4, 1fr); }
@@ -921,7 +927,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
     [data-anime-status].anime-fade-in-active { opacity: 1; transform: scale(1); }
     [data-anime-status].anime-fade-out { opacity: 0; transform: scale(0.95); transition: opacity 0.3s ease, transform 0.3s ease; }
 
-    /* 分页专用 FLIP 状态（避免与筛选/搜索混用） */
+    /* 分页专用 FLIP 状态 */
     [data-anime-status].anime-paginate-animating {
       transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -955,7 +961,6 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
     #search-input:focus { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
     .search-highlight { background-color: #fef3c7; padding: 0.125rem 0.25rem; border-radius: 0.25rem; font-weight: 600; }
 
-    /* 减少动画偏好（保留第一版） */
     @media (prefers-reduced-motion: reduce) {
       * { transition: none !important; animation: none !important; }
       #anime-list-container [data-anime-status] { transform: none !important; }
@@ -977,12 +982,18 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
     }
   </style>
 
-  <!-- 单一 init + teardown，Swup 生命周期安全重绑；新增“仅分页”FLIP（不与筛选/搜索状态类冲突） -->
+  <!-- 单一 init + teardown，Swup/原生回退安全重绑；查询限定在 .anime-page 作用域内 -->
   <script is:inline>
     (function() {
+      // 全局容器（跨页面存在），仅保存钩子与清理方法
       window.__animePage = window.__animePage || {};
 
+      // 仅当页面中存在番剧容器时初始化
       function initAnimePage() {
+        const root = document.querySelector('.anime-page');
+        const container = root ? root.querySelector('#anime-list-container') : null;
+        if (!root || !container) return; // 不是本页，直接退出
+
         const state = {
           currentPage: 1,
           pageWindowStart: 1,
@@ -990,35 +1001,32 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           itemsPerPage: 10,
           listeners: [],
           searchDebounce: 0,
-          lastFiltered: [],
           reduceMotion: (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) || false,
         };
 
-        const container = document.getElementById('anime-list-container');
-        const allItems = Array.from(document.querySelectorAll('[data-anime-status]'));
-        const filterTags = Array.from(document.querySelectorAll('.filter-tag'));
-        const searchInput = document.getElementById('search-input');
-        const pageNumbersContainer = document.getElementById('page-numbers');
-        const firstBtn = document.getElementById('first-page');
-        const prevBtn = document.getElementById('prev-page');
-        const nextBtn = document.getElementById('next-page');
-        const lastBtn = document.getElementById('last-page');
-        const announce = document.getElementById('list-announce');
+        const allItems = Array.from(root.querySelectorAll('[data-anime-status]'));
+        const filterTags = Array.from(root.querySelectorAll('.filter-tag'));
+        const searchInput = root.querySelector('#search-input');
+        const pageNumbersContainer = root.querySelector('#page-numbers');
+        const firstBtn = root.querySelector('#first-page');
+        const prevBtn = root.querySelector('#prev-page');
+        const nextBtn = root.querySelector('#next-page');
+        const lastBtn = root.querySelector('#last-page');
+        const announce = root.querySelector('#list-announce');
 
-        // filter counts（保留第一版：搜索实时更新各状态计数）
+        // filter counts
         const countEls = {
-          all: document.getElementById('count-all'),
-          watching: document.getElementById('count-watching'),
-          planned: document.getElementById('count-planned'),
-          completed: document.getElementById('count-completed'),
-          onhold: document.getElementById('count-onhold'),
-          dropped: document.getElementById('count-dropped'),
+          all: root.querySelector('#count-all'),
+          watching: root.querySelector('#count-watching'),
+          planned: root.querySelector('#count-planned'),
+          completed: root.querySelector('#count-completed'),
+          onhold: root.querySelector('#count-onhold'),
+          dropped: root.querySelector('#count-dropped'),
         };
 
         function getItemsPerPageByLayout() {
-          if (!container) return 10;
           const cols = (getComputedStyle(container).gridTemplateColumns || '').split(' ').filter(Boolean).length || 4;
-          const rows = window.matchMedia && window.matchMedia('(min-width: 768px)').matches ? 2 : 2; // stable rows
+          const rows = window.matchMedia && window.matchMedia('(min-width: 768px)').matches ? 2 : 2;
           return cols * rows;
         }
 
@@ -1032,7 +1040,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         }
 
         function computeFiltered() {
-          const activeStatusEl = document.querySelector('.filter-tag.active');
+          const activeStatusEl = root.querySelector('.filter-tag.active');
           const activeStatus = (activeStatusEl && activeStatusEl.getAttribute('data-status')) || 'all';
           const term = ((searchInput && searchInput.value) || '').trim().toLowerCase();
 
@@ -1050,7 +1058,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           return fn(filtered);
         }
 
-        // 通用 FLIP 重排动画（用于：过滤/搜索等按钮行为）
+        // 通用 FLIP 重排动画
         function flipAnimate(keep, show, hide) {
           if (state.reduceMotion) {
             hide.forEach((el) => el.classList.add('is-filtered-out'));
@@ -1134,7 +1142,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           }, 120);
         }
 
-        // 分页专用 FLIP（仅切换 is-paginated-out，不触碰筛选/搜索类）
+        // 分页专用 FLIP
         function flipAnimatePagination(keep, show, hide) {
           if (state.reduceMotion) {
             hide.forEach((el) => el.classList.add('is-paginated-out'));
@@ -1148,17 +1156,14 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             first.set(el, { left: rect.left, top: rect.top });
           });
 
-          // 先给要隐藏的做淡出
           hide.forEach((el) => el.classList.add('anime-paginate-fade-out'));
 
           setTimeout(() => {
-            // 隐藏旧页元素
             hide.forEach((el) => {
               el.classList.add('is-paginated-out');
               el.classList.remove('anime-paginate-fade-out');
             });
 
-            // 显示新页元素（先透明缩放进入）
             show.forEach((el) => {
               el.classList.remove('is-paginated-out');
               el.classList.add('anime-paginate-fade-in');
@@ -1170,7 +1175,6 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             });
 
             requestAnimationFrame(() => {
-              // 计算 keep 的 last，用于位移补偿
               const last = new Map();
               keep.forEach((el) => {
                 const rect = el.getBoundingClientRect();
@@ -1237,7 +1241,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             if (countEls[s]) countEls[s].textContent = `(${countsByStatus[s] || 0})`;
           });
 
-          const activeStatusEl = document.querySelector('.filter-tag.active');
+          const activeStatusEl = root.querySelector('.filter-tag.active');
           const activeStatus = (activeStatusEl && activeStatusEl.getAttribute('data-status')) || 'all';
           const showing = computeFiltered().length;
           const label = activeStatus === 'all' ? 'All' : activeStatus;
@@ -1271,7 +1275,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             if (i === state.currentPage) btn.classList.add('active');
             btn.addEventListener('click', () => {
               state.currentPage = i;
-              const filtered = state.lastFiltered.length ? state.lastFiltered : computeFiltered();
+              const filtered = state.lastFiltered && state.lastFiltered.length ? state.lastFiltered : computeFiltered();
               applyPagination(filtered, true);
               updatePaginationUI(filtered.length);
             });
@@ -1286,7 +1290,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           if (lastBtn) lastBtn.disabled = onLast;
         }
 
-        // 仅分页的显示更新（支持 FLIP）
+        // 仅分页显示更新
         function applyPagination(filtered, withFlip = false) {
           const list = filtered || computeFiltered();
           state.itemsPerPage = getItemsPerPageByLayout();
@@ -1305,7 +1309,6 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
             return;
           }
 
-          // 仅分页相关的 FLIP：不改动 is-filtered-out / is-searched-out
           const beforeVisible = allItems.filter(el =>
             !el.classList.contains('is-filtered-out') &&
             !el.classList.contains('is-searched-out') &&
@@ -1320,7 +1323,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           flipAnimatePagination(keep, show, hide);
         }
 
-        // 刷新全部（支持触发 FLIP 重排）
+        // 刷新所有显示（过滤+搜索），分页不动画
         function refreshAll(triggerFLIP = false) {
           const beforeVisible = allItems.filter(el =>
             !el.classList.contains('is-filtered-out') &&
@@ -1328,7 +1331,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           );
 
           withFiltered((filtered) => {
-            const activeStatusEl = document.querySelector('.filter-tag.active');
+            const activeStatusEl = root.querySelector('.filter-tag.active');
             const activeStatus = (activeStatusEl && activeStatusEl.getAttribute('data-status')) || 'all';
             const term = ((searchInput && searchInput.value) || '').trim().toLowerCase();
             const matched = new Set(filtered);
@@ -1346,7 +1349,6 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
 
             state.currentPage = 1;
             state.pageWindowStart = 1;
-            // 筛选/搜索已做 FLIP；分页这里不重复动画
             applyPagination(filtered, false);
             updatePaginationUI(filtered.length);
             updateCountsForSearch();
@@ -1364,19 +1366,19 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           });
         }
 
-        // 绑定过滤按钮（含无障碍）— 点击触发重排动画
+        // 绑定过滤按钮
         filterTags.forEach(tag => {
           const handler = () => {
             if (tag.classList.contains('active')) return;
             filterTags.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-pressed', 'false'); });
             tag.classList.add('active'); tag.setAttribute('aria-pressed','true');
-            refreshAll(true); // 启用按钮点击的重排动画
+            refreshAll(true);
           };
           tag.addEventListener('click', handler);
           state.listeners.push({ el: tag, type: 'click', handler });
         });
 
-        // 搜索输入（输入防抖 + ESC 清空 + Enter 跳至第一页）— 全部启用重排动画
+        // 搜索输入
         if (searchInput) {
           const inputHandler = function() {
             clearTimeout(state.searchDebounce);
@@ -1398,7 +1400,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           state.listeners.push({ el: searchInput, type: 'keydown', handler: keyHandler });
         }
 
-        // 分页按钮（现在使用“仅分页”FLIP）
+        // 分页按钮
         if (firstBtn && prevBtn && nextBtn && lastBtn) {
           const firstH = () => withFiltered((filtered) => {
             const totalPages = Math.ceil(filtered.length / getItemsPerPageByLayout());
@@ -1438,12 +1440,12 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           state.listeners.push({ el: lastBtn, type: 'click', handler: lastH });
         }
 
-        // 初次渲染
+        // 初次渲染（设置分页/过滤可见性）
         refreshAll(false);
 
         // 在布局变化时刷新每页数量+分页（不做分页动画）
         function updateAfterLayout() {
-          const filtered = state.lastFiltered.length ? state.lastFiltered : computeFiltered();
+          const filtered = state.lastFiltered && state.lastFiltered.length ? state.lastFiltered : computeFiltered();
           applyPagination(filtered, false);
           updatePaginationUI(filtered.length);
         }
@@ -1451,20 +1453,31 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
 
         // Teardown
         function cleanup() {
-          state.listeners.forEach(({ el, type, handler }) => el.removeEventListener(type, handler));
+          state.listeners.forEach(({ el, type, handler }) => el && el.removeEventListener && el.removeEventListener(type, handler));
           state.listeners = [];
           clearTimeout(state.searchDebounce);
-          if (window.__animePage) delete window.__animePage.updateAfterLayout;
-
-          if (window.__animePage.__swup && window.swup && window.swup.hooks && window.swup.hooks.off) {
-            const reinit = window.__animePage.__swup.reinit;
-            window.swup.hooks.off('content:replace', reinit);
-            window.swup.hooks.off('page:view', reinit);
-            window.swup.hooks.off('animation:in:end', reinit);
-            window.__animePage.__swup.bound = false;
+          if (window.__animePage && window.__animePage.updateAfterLayout) {
+            delete window.__animePage.updateAfterLayout;
           }
         }
         window.__animePage.cleanup = cleanup;
+      }
+
+      // 安全调度：当页面包含番剧容器时才初始化；重试等待 DOM 就绪
+      function scheduleInitTry(timesLeft = 10) {
+        // 先清一次旧状态，避免因缓存返回时残留
+        if (window.__animePage && typeof window.__animePage.cleanup === 'function') {
+          try { window.__animePage.cleanup(); } catch (_) {}
+        }
+        const root = document.querySelector('.anime-page');
+        const hasContainer = root && root.querySelector('#anime-list-container');
+        if (root && hasContainer) {
+          initAnimePage();
+          return;
+        }
+        if (timesLeft > 0) {
+          setTimeout(() => scheduleInitTry(timesLeft - 1), 80);
+        }
       }
 
       // Swup 生命周期（幂等绑定）
@@ -1474,28 +1487,34 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         if (window.__animePage.__swup.bound) return;
 
         const reinit = () => {
-          if (window.__animePage && window.__animePage.cleanup) window.__animePage.cleanup();
-          setTimeout(() => initAnimePage(), 50);
+          scheduleInitTry();
         };
         window.__animePage.__swup.reinit = reinit;
 
+        // 这些阶段在前进/后退和普通跳转都会触发
         window.swup.hooks.on('content:replace', reinit);
         window.swup.hooks.on('page:view', reinit);
         window.swup.hooks.on('animation:in:end', reinit);
         window.__animePage.__swup.bound = true;
       }
 
-      // 普通加载
+      // 常规加载
       document.addEventListener('DOMContentLoaded', () => {
-        initAnimePage();
-        if (window.swup) swupBind();
+        scheduleInitTry();
+        swupBind();
       });
 
       // 如果稍后启用 swup
       document.addEventListener('swup:enable', () => {
-        if (window.__animePage && window.__animePage.cleanup) window.__animePage.cleanup();
-        initAnimePage();
+        scheduleInitTry();
         swupBind();
+      });
+
+      // 浏览器后退/前进 bfcache 恢复
+      window.addEventListener('pageshow', (e) => {
+        if (e.persisted) {
+          scheduleInitTry();
+        }
       });
     })();
   </script>
