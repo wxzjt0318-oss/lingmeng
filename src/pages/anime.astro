@@ -567,7 +567,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
               class="w-full px-4 py-3 pl-12 rounded-[var(--radius-large)] border border-[var(--line-divider)] bg-[var(--card-bg)] text-[var(--text-body)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
               aria-label={T.searchAnimePlaceholder}
             />
-            <div class="absolute left-4 top-1/2 transform -translate-y-1/2 text-[var(--text-secondary)]" aria-hidden="true">
+            <div class="absolute left-4 top-1/2 transform -translate-y-1/2 text-[var(--text-secondary)]" aria-hidden="true" style="pointer-events: none">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
               </svg>
@@ -646,15 +646,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
                         alt={anime.title}
                         class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                       />
-                      <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" aria-hidden="true">
-                        <div class="absolute inset-0 flex items-center justify-center">
-                          <div class="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">
-                            <svg class="w-6 h-6 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                              <path d="M8 5v14l11-7z"/>
-                            </svg>
-                          </div>
-                        </div>
-                      </div>
+                      <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" aria-hidden="true" style="pointer-events: none"></div>
                     </a>
                     
                     <!-- 状态标签 -->
@@ -743,8 +735,8 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
     </div>
   </div>
 
-  <script is:inline define:vars={{ isBothSidebarMode }}>
-  // 布局切换动画（保持原逻辑），仅在本页存在时生效
+  <!-- 布局切换动画（保持原逻辑），仅在本页存在时生效 -->
+  <script is:inline define:vars={{ isBothSidebarMode }} data-swup-reload-script>
   (function() {
     function runWhenReady() {
       const root = document.querySelector('.anime-page');
@@ -983,7 +975,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
   </style>
 
   <!-- 单一 init + teardown，Swup/原生回退安全重绑；查询限定在 .anime-page 作用域内 -->
-  <script is:inline>
+  <script is:inline data-swup-reload-script>
     (function() {
       // 全局容器（跨页面存在），仅保存钩子与清理方法
       window.__animePage = window.__animePage || {};
@@ -1002,6 +994,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           listeners: [],
           searchDebounce: 0,
           reduceMotion: (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) || false,
+          lastFiltered: null
         };
 
         const allItems = Array.from(root.querySelectorAll('[data-anime-status]'));
@@ -1024,10 +1017,49 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           dropped: root.querySelector('#count-dropped'),
         };
 
+        // 计算当前列数（优先解析 gridTemplateColumns；失败时用首行测量；再失败用默认）
+        function getCols() {
+          const style = getComputedStyle(container);
+          let gtc = style.gridTemplateColumns || '';
+          if (gtc && gtc !== 'none') {
+            // 尝试解析 repeat(n, ...)
+            const m = gtc.match(/repeat\(\s*(\d+)\s*,/i);
+            if (m) {
+              const n = parseInt(m[1], 10);
+              if (n > 0) return n;
+            }
+            // 非 repeat：统计列数（以空格分隔 1fr/px 等）
+            const parts = gtc.trim().split(/\s+/).filter(Boolean);
+            if (parts.length > 0) return parts.length;
+          }
+
+          // DOM 测量首行可见元素个数
+          const candidates = allItems.filter(el =>
+            !el.classList.contains('is-filtered-out') &&
+            !el.classList.contains('is-searched-out') &&
+            !el.classList.contains('is-paginated-out')
+          );
+          const pool = candidates.length ? candidates : allItems;
+          let cols = 0;
+          if (pool.length) {
+            const firstTop = pool[0].getBoundingClientRect().top;
+            for (let i = 0; i < pool.length; i++) {
+              const t = pool[i].getBoundingClientRect().top;
+              if (Math.abs(t - firstTop) < 1) cols++;
+              else break;
+            }
+          }
+          if (cols > 0) return cols;
+
+          // 兜底
+          return container.classList.contains('grid-mode') ? 5 : 4;
+        }
+
         function getItemsPerPageByLayout() {
-          const cols = (getComputedStyle(container).gridTemplateColumns || '').split(' ').filter(Boolean).length || 4;
+          const cols = getCols();
           const rows = window.matchMedia && window.matchMedia('(min-width: 768px)').matches ? 2 : 2;
-          return cols * rows;
+          const ipp = Math.max(1, cols * rows);
+          return ipp;
         }
 
         function matchesSearch(item, term) {
