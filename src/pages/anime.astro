@@ -595,7 +595,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
               <span id="count-completed" class="ml-1 bg-blue-500 text-white text-xs rounded-full px-2 py-0.5">({animeList.filter(a => a.status === 'completed').length})</span>
             </button>
             {ANIME_MODE === 'bangumi' && (
-              <>
+              <Fragment>
                 <button class="filter-tag" data-status="onhold" aria-pressed="false">
                   {i18n(I18nKey.animeStatusOnHold)} 
                   <span id="count-onhold" class="ml-1 bg-purple-500 text-white text-xs rounded-full px-2 py-0.5">({animeList.filter(a => a.status === 'onhold').length})</span>
@@ -604,7 +604,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
                   {i18n(I18nKey.animeStatusDropped)} 
                   <span id="count-dropped" class="ml-1 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">({animeList.filter(a => a.status === 'dropped').length})</span>
                 </button>
-              </>
+              </Fragment>
             )}
           </div>
         </div>
@@ -859,9 +859,16 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
       }
     }
 
-    // 在每次进入页面时运行
+    // 在每次进入页面时运行（Swup 导航时也要立即尝试）
     document.addEventListener('DOMContentLoaded', runWhenReady);
     window.addEventListener("layoutChange", onLayoutChange);
+    // 关键：脚本执行时也尝试一次，避免依赖 DOMContentLoaded
+    try { runWhenReady(); } catch(_) {}
+
+    // Swup DOM 事件兜底
+    document.addEventListener('swup:contentReplaced', () => { try { runWhenReady(); } catch(_) {} });
+    document.addEventListener('swup:pageView', () => { try { runWhenReady(); } catch(_) {} });
+    document.addEventListener('swup:animationInDone', () => { try { runWhenReady(); } catch(_) {} });
   })();
   </script>
 
@@ -1017,18 +1024,25 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           dropped: root.querySelector('#count-dropped'),
         };
 
+        // 读取搜索框的值（避免 TS 断言，用原生类型判定）
+        function getSearchTerm() {
+          if (!searchInput) return '';
+          if (searchInput instanceof HTMLInputElement || searchInput instanceof HTMLTextAreaElement) {
+            return (searchInput.value || '').trim().toLowerCase();
+          }
+          return (searchInput.textContent || '').trim().toLowerCase();
+        }
+
         // 计算当前列数（优先解析 gridTemplateColumns；失败时用首行测量；再失败用默认）
         function getCols() {
           const style = getComputedStyle(container);
           let gtc = style.gridTemplateColumns || '';
           if (gtc && gtc !== 'none') {
-            // 尝试解析 repeat(n, ...)
             const m = gtc.match(/repeat\(\s*(\d+)\s*,/i);
             if (m) {
               const n = parseInt(m[1], 10);
               if (n > 0) return n;
             }
-            // 非 repeat：统计列数（以空格分隔 1fr/px 等）
             const parts = gtc.trim().split(/\s+/).filter(Boolean);
             if (parts.length > 0) return parts.length;
           }
@@ -1074,7 +1088,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         function computeFiltered() {
           const activeStatusEl = root.querySelector('.filter-tag.active');
           const activeStatus = (activeStatusEl && activeStatusEl.getAttribute('data-status')) || 'all';
-          const term = ((searchInput && searchInput.value) || '').trim().toLowerCase();
+          const term = getSearchTerm();
 
           return allItems.filter((item) => {
             const itemStatus = item.getAttribute('data-anime-status') || '';
@@ -1259,7 +1273,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         }
 
         function updateCountsForSearch() {
-          const term = ((searchInput && searchInput.value) || '').trim().toLowerCase();
+          const term = getSearchTerm();
           const matches = allItems.filter((it) => matchesSearch(it, term));
           const countAll = matches.length;
           const countsByStatus = Object.create(null);
@@ -1365,7 +1379,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           withFiltered((filtered) => {
             const activeStatusEl = root.querySelector('.filter-tag.active');
             const activeStatus = (activeStatusEl && activeStatusEl.getAttribute('data-status')) || 'all';
-            const term = ((searchInput && searchInput.value) || '').trim().toLowerCase();
+            const term = getSearchTerm();
             const matched = new Set(filtered);
 
             allItems.forEach((el) => {
@@ -1403,7 +1417,7 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           const handler = () => {
             if (tag.classList.contains('active')) return;
             filterTags.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-pressed', 'false'); });
-            tag.classList.add('active'); tag.setAttribute('aria-pressed','true');
+            tag.addEventListener && tag.classList.add('active'); tag.setAttribute('aria-pressed','true');
             refreshAll(true);
           };
           tag.addEventListener('click', handler);
@@ -1418,7 +1432,11 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
           };
           const keyHandler = function(e) {
             if (e.key === 'Escape') {
-              searchInput.value = '';
+              if (searchInput instanceof HTMLInputElement) {
+                searchInput.value = '';
+              } else if (searchInput) {
+                searchInput.textContent = '';
+              }
               refreshAll(true);
             } else if (e.key === 'Enter') {
               state.currentPage = 1;
@@ -1495,24 +1513,33 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         window.__animePage.cleanup = cleanup;
       }
 
-      // 安全调度：当页面包含番剧容器时才初始化；重试等待 DOM 就绪
-      function scheduleInitTry(timesLeft = 10) {
-        // 先清一次旧状态，避免因缓存返回时残留
+      // 安全调度：当页面包含番剧容器时才初始化；重试等待 DOM 就绪（延长次数 + MutationObserver 兜底）
+      function scheduleInitTry(timesLeft = 30) {
         if (window.__animePage && typeof window.__animePage.cleanup === 'function') {
           try { window.__animePage.cleanup(); } catch (_) {}
         }
-        const root = document.querySelector('.anime-page');
-        const hasContainer = root && root.querySelector('#anime-list-container');
-        if (root && hasContainer) {
-          initAnimePage();
-          return;
-        }
+        const tryInit = () => {
+          const root = document.querySelector('.anime-page');
+          const hasContainer = root && root.querySelector('#anime-list-container');
+          if (root && hasContainer) {
+            initAnimePage();
+            return true;
+          }
+          return false;
+        };
+        if (tryInit()) return;
+
         if (timesLeft > 0) {
-          setTimeout(() => scheduleInitTry(timesLeft - 1), 80);
+          setTimeout(() => scheduleInitTry(timesLeft - 1), 120);
+        } else {
+          // 兜底监听最多 5 秒
+          const mo = new MutationObserver(() => { if (tryInit()) mo.disconnect(); });
+          mo.observe(document.documentElement, { childList: true, subtree: true });
+          setTimeout(() => mo.disconnect(), 5000);
         }
       }
 
-      // Swup 生命周期（幂等绑定）
+      // Swup 钩子绑定（存在则用 hooks，不存在则使用 DOM 事件）
       function swupBind() {
         if (!window.swup) return;
         window.__animePage.__swup = window.__animePage.__swup || { bound: false, reinit: null };
@@ -1523,10 +1550,12 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         };
         window.__animePage.__swup.reinit = reinit;
 
-        // 这些阶段在前进/后退和普通跳转都会触发
-        window.swup.hooks.on('content:replace', reinit);
-        window.swup.hooks.on('page:view', reinit);
-        window.swup.hooks.on('animation:in:end', reinit);
+        // Swup v4 hooks
+        if (window.swup.hooks && typeof window.swup.hooks.on === 'function') {
+          window.swup.hooks.on('content:replace', reinit);
+          window.swup.hooks.on('page:view', reinit);
+          window.swup.hooks.on('animation:in:end', reinit);
+        }
         window.__animePage.__swup.bound = true;
       }
 
@@ -1535,17 +1564,16 @@ const sortedAnimeList = [...animeList].sort((a, b) => {
         scheduleInitTry();
         swupBind();
       });
+      // 直接尝试一次，避免错过时机
+      try { scheduleInitTry(); swupBind(); } catch (_) {}
 
-      // 如果稍后启用 swup
-      document.addEventListener('swup:enable', () => {
-        scheduleInitTry();
-        swupBind();
-      });
-
-      // 浏览器后退/前进 bfcache 恢复
-      window.addEventListener('pageshow', (e) => {
-        if (e.persisted) {
-          scheduleInitTry();
+      // Swup DOM 事件兜底（若未使用 Swup，不会触发）
+      document.addEventListener('swup:contentReplaced', () => { try { scheduleInitTry(); } catch(_) {} });
+      document.addEventListener('swup:pageView', () => { try { scheduleInitTry(); } catch(_) {} });
+      document.addEventListener('swup:animationInDone', () => { try { scheduleInitTry(); } catch(_) {} });
+      document.addEventListener('swup:willReplaceContent', () => {
+        if (window.__animePage && typeof window.__animePage.cleanup === 'function') {
+          try { window.__animePage.cleanup(); } catch (_) {}
         }
       });
     })();
